@@ -116,6 +116,7 @@ class Controller:
         self.motioninputpos = self.motion['joint_pos']
         self.motioninputvel = self.motion['joint_vel']
         self.action_buffer = np.zeros((self.config.num_actions,), dtype=np.float32)
+        self.init_to_world = np.zeros((3,3), dtype=np.float32)
         self.dof_idx = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 
                         12, 13, 14, 
                         15, 16, 17, 18, 19, 20, 21, 
@@ -236,7 +237,47 @@ class Controller:
             quat = self.low_state.imu_state.quaternion
             print("quat",quat)
             time.sleep(self.config.control_dt)
-
+    def yaw_quat(self,q):
+        w, x, y, z = q
+        yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2))
+        return np.array([np.cos(yaw / 2), 0, 0, np.sin(yaw / 2)])
+    def matrix_to_quaternion_simple(self, matrix):
+        """
+        简化的矩阵转四元数实现
+        """
+        matrix = np.array(matrix)
+        m00, m01, m02 = matrix[0]
+        m10, m11, m12 = matrix[1]
+        m20, m21, m22 = matrix[2]
+        
+        trace = m00 + m11 + m22
+        
+        if trace > 0:
+            s = 0.5 / np.sqrt(trace + 1.0)
+            w = 0.25 / s
+            x = (m21 - m12) * s
+            y = (m02 - m20) * s
+            z = (m10 - m01) * s
+        elif m00 > m11 and m00 > m22:
+            s = 2.0 * np.sqrt(1.0 + m00 - m11 - m22)
+            w = (m21 - m12) / s
+            x = 0.25 * s
+            y = (m01 + m10) / s
+            z = (m02 + m20) / s
+        elif m11 > m22:
+            s = 2.0 * np.sqrt(1.0 + m11 - m00 - m22)
+            w = (m02 - m20) / s
+            x = (m01 + m10) / s
+            y = 0.25 * s
+            z = (m12 + m21) / s
+        else:
+            s = 2.0 * np.sqrt(1.0 + m22 - m00 - m11)
+            w = (m10 - m01) / s
+            x = (m02 + m20) / s
+            y = (m12 + m21) / s
+            z = 0.25 * s
+        
+        return np.array([w, x, y, z])
     def run(self):
         self.counter += 1
         # Get the current joint position and velocity
@@ -262,7 +303,19 @@ class Controller:
             waist_pitch= self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[2]].q
             quat_torso = transform_pelvis_to_torso_complete(waist_yaw, waist_roll, waist_pitch, quat)
         
-
+        if self.timestep < 2:
+            ref_motion_quat = self.motionquat[self.timestep,9,:]
+            yaw_motion_quat = self.yaw_quat(ref_motion_quat)
+            yaw_motion_matrix = np.zeros(9)
+            yaw_motion_matrix = quaternion_to_rotation_matrix(yaw_motion_quat)
+            yaw_motion_matrix = yaw_motion_matrix.reshape(3,3)
+            
+            robot_quat = quat_torso
+            yaw_robot_quat = self.yaw_quat(robot_quat)
+            yaw_robot_matrix = np.zeros(9)
+            yaw_robot_matrix = quaternion_to_rotation_matrix(yaw_robot_quat)
+            yaw_robot_matrix = yaw_robot_matrix.reshape(3,3)
+            self.init_to_world =  yaw_robot_matrix @ yaw_motion_matrix.T
         print("quat_torso",quat_torso)
         print("quat",quat)
         qj_obs = self.qj.copy()
@@ -271,8 +324,9 @@ class Controller:
         motioninput = np.concatenate((self.motioninputpos[self.timestep,:],self.motioninputvel[self.timestep,:]), axis=0)
         motionposcurrent = self.motionpos[self.timestep,9,:]
         motionquatcurrent = self.motionquat[self.timestep,9,:]
-        
-        relquat = quaternion_multiply(quaternion_conjugate(quat_torso),motionquatcurrent)
+
+        relquat =  quaternion_multiply(self.matrix_to_quaternion_simple(self.init_to_world), motionquatcurrent)
+        relquat = quaternion_multiply(quaternion_conjugate(quat_torso),relquat)
         relquat = relquat / np.linalg.norm(relquat)
         relmatrix = quaternion_to_rotation_matrix(relquat)[:,:2].reshape(-1,)
         
