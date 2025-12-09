@@ -190,7 +190,7 @@ def pd_control(target_q, q, kp, target_dq, dq, kd):
     """Calculates torques from position commands"""
     return (target_q - q) * kp + (target_dq - dq) * kd
 
-
+# 与xml文件里定义的执行器顺序保持一致
 joint_xml = [
         "left_hip_pitch_joint",
     "left_hip_roll_joint",
@@ -239,7 +239,9 @@ if __name__ == "__main__":
     # parser.add_argument("config_file", default=,type=str, help="config file name in the config folder")
     # args = parser.parse_args()
     # config_file = "/home/ym/Whole_body_tracking/configs/g1.yaml"
-    motion_file = "./dance_zui.npz"
+
+    # 测试时motion_file和policy_path两个文件路径都要改
+    motion_file = "./motion.npz"
     motion =  np.load(motion_file)
     motionpos = motion["body_pos_w"]
     motionquat = motion["body_quat_w"]
@@ -247,17 +249,19 @@ if __name__ == "__main__":
     motioninputvel = motion["joint_vel"]
     i = 0
 
-
-    policy_path ="./policy_zuiwu_48000.onnx"
-
+    policy_path ="./policy.onnx"
 
     num_actions = 29
+    # 观测向量 154 维 = 参考动作 58 + 躯干相对姿态 6 + 根角速度 3 + 关节位置(减去默认) 29 + 关节转速 29 + 上一动作 29
     num_obs = 154
     import onnx
     model = onnx.load(policy_path)
+    # 把 ONNX 模型里自带的元数据配置一次性读出来，并按 XML 关节顺序重排
     for prop in model.metadata_props:
+        # 得到网络输出的关节顺序列表
         if prop.key == "joint_names":
             joint_seq = prop.value.split(",")
+        # 把元数据里的默认关节零位转化为float数组，再按XML关节顺序重排，后面 PD 和初始化就能直接用
         if prop.key == "default_joint_pos":   
             joint_pos_array_seq = np.array([float(x) for x in prop.value.split(",")])
             joint_pos_array = np.array([joint_pos_array_seq[joint_seq.index(joint)] for joint in joint_xml])
@@ -286,20 +290,26 @@ if __name__ == "__main__":
 
     # load policy
     # policy = torch.jit.load(policy_path)
-                
+
+    # 把onnx模型加载进内存，由 ONNX Runtime负责后端计算，返回的对象 policy 相当于一个“已编译好的函数”            
     policy = onnxruntime.InferenceSession(policy_path)
+    # 所用模型只有1个输入张量，所以取第0维，返回其名称，就是个字符串
     input_name = policy.get_inputs()[0].name
     output_name = policy.get_outputs()[0].name
 
-    action_buffer = np.zeros((num_actions,), dtype=np.float32)
+    action_buffer = np.zeros((num_actions,), dtype=np.float32) # 存last_action
+    # 把仿真初始状态设为默认关节位置，并设置躯干高度0.8m，防止初始落地碰撞
     timestep = 0
     motioninput = np.concatenate((motioninputpos[timestep,:],motioninputvel[timestep,:]), axis=0)
+    # 这里应该是获取基座body在参考运动初始帧的位姿，索引顺序还要再确定下
     motionposcurrent = motionpos[timestep,9,:]
     motionquatcurrent = motionquat[timestep,9,:]
+    # 获取默认关节零位，设置初始姿态
     target_dof_pos = joint_pos_array.copy()
     d.qpos[2] = 0.8
     d.qpos[7:] = target_dof_pos
     # target_dof_pos = joint_pos_array_seq
+    # 获取anchor body在mujoco中的body索引
     body_name = "torso_link"  # robot_ref_body_index=3 motion_ref_body_index=7
     # body_name = "pelvis"
     body_id = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, body_name)
@@ -313,8 +323,9 @@ if __name__ == "__main__":
         start = time.time()
         while viewer.is_running() and time.time() - start < simulation_duration:
             step_start = time.time()
+            # 在前两个控制周期，把参考运动和仿真的yaw对齐
+            # 得到参考->机器人的初始yaw对齐矩阵
             if timestep < 2:
-
                 ref_motion_quat = motionquat[timestep,9,:]
                 yaw_motion_quat = yaw_quat(ref_motion_quat)
                 yaw_motion_matrix = np.zeros(9)
@@ -328,52 +339,68 @@ if __name__ == "__main__":
                 yaw_robot_matrix = yaw_robot_matrix.reshape(3,3)
                 init_to_world =  yaw_robot_matrix @ yaw_motion_matrix.T
 
-
             mujoco.mj_step(m, d)
+            # 计算传入仿真的最终力矩tau，也是底层PD控制，500hz
             tau = pd_control(target_dof_pos, d.qpos[7:], stiffness_array, np.zeros_like(damping_array), d.qvel[6:], damping_array)# xml
-
             d.ctrl[:] = tau
             counter += 1
+
+            # 上层50hz策略控制回路
             if counter % control_decimation == 0:
                 # Apply control signal here.
+                # 取robot_anchor_pos/quat
                 position = d.xpos[body_id]
                 quaternion = d.xquat[body_id]
+                # 取command
+                if timestep >= motioninputpos.shape[0]:
+                    timestep = motioninputpos.shape[0] - 1      # 停在最后一帧
                 motioninput = np.concatenate((motioninputpos[timestep,:],motioninputvel[timestep,:]),axis=0)
+                # anchor_pos/quat
                 motionposcurrent = motionpos[timestep,9,:]
                 motionquatcurrent = motionquat[timestep,9,:]
+                # 计算机器人->参考的旋转误差(本体坐标系)，
+                # 其中init_to_world把“参考动作世界系”水平转到“仿真机器人世界系”
                 anchor_quat = subtract_frame_transforms_mujoco(position,quaternion,motionposcurrent,motionquatcurrent,init_to_world)[1]
+                # 取旋转误差矩阵的前两列(和论文对应)
                 anchor_ori = np.zeros(9)
                 mujoco.mju_quat2Mat(anchor_ori, anchor_quat)
                 anchor_ori = anchor_ori.reshape(3, 3)[:, :2]
                 anchor_ori = anchor_ori.reshape(-1,)
                 # create observation
+                # 手动拼观测向量，用 offset 指针一段段把数据塞进 obs 数组
                 offset = 0
                 obs[offset:offset + 58] = motioninput
                 offset += 58
                 obs[offset:offset + 6] = anchor_ori  
                 offset += 6
-                
+                # 计算角速度(本体系)并塞进观测
                 angvel = quat_rotate_inverse_np(d.qpos[3:7], d.qvel[3 : 6])
                 obs[offset:offset + 3] = d.qvel[3 : 6]
                 offset += 3
+                # 取q_joint, v_joint塞入观测
+                # 这里就肯定了，只有29个关节的位置信息，没有浮动基部分
                 qpos_xml = d.qpos[7 : 7 + num_actions]  # joint positions
                 qpos_seq = np.array([qpos_xml[joint_xml.index(joint)] for joint in joint_seq])
+                # q_joint取的其实是q_joint - q_default
                 obs[offset:offset + num_actions] = qpos_seq - joint_pos_array_seq  # joint positions
                 offset += num_actions
                 qvel_xml = d.qvel[6 : 6 + num_actions]  # joint positions
                 qvel_seq = np.array([qvel_xml[joint_xml.index(joint)] for joint in joint_seq])
                 obs[offset:offset + num_actions] = qvel_seq  # joint velocities
                 offset += num_actions   
+                # 将last_action塞入观测
                 obs[offset:offset + num_actions] = action_buffer
-
+                # 把准备好的观测向量转化为[1，154]的张量(浅拷贝，只是映射)
                 obs_tensor = torch.from_numpy(obs).unsqueeze(0)
+                # 策略推理，第一个参数指：只要名叫actions的输出张量
+                # 第二个参数dict，包含观测和当前帧序号
                 action = policy.run(['actions'], {'obs': obs_tensor.numpy(),'time_step':np.array([timestep], dtype=np.float32).reshape(1,1)})[0]
                 # 
-                action = np.asarray(action).reshape(-1)
-                action_buffer = action.copy()
-                target_dof_pos = action * action_scale + joint_pos_array_seq
+                action = np.asarray(action).reshape(-1) # 摊平
+                action_buffer = action.copy() # 存入a_last
+                target_dof_pos = action * action_scale + joint_pos_array_seq # 套公式计算期望q(网络joint顺序)
                 target_dof_pos = target_dof_pos.reshape(-1,)
-                target_dof_pos = np.array([target_dof_pos[joint_seq.index(joint)] for joint in joint_xml])
+                target_dof_pos = np.array([target_dof_pos[joint_seq.index(joint)] for joint in joint_xml]) # 按xml重排
                 i += 1
                 if i > 0:# 1000
                     timestep += 1
