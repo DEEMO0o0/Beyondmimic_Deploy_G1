@@ -1,4 +1,5 @@
 import sys
+# 这个绝对路径移植时要改
 sys.path.append('/home/deepcyber-mk/Documents/unitree_rl_gym')
 sys.path.append('/home/deepcyber-mk/Documents/unitree_rl_gym/deploy/deploy_real/common')
 from legged_gym import LEGGED_GYM_ROOT_DIR
@@ -96,10 +97,11 @@ def quaternion_to_rotation_matrix(q):
 
 class Controller:
     def __init__(self, config: Config) -> None:
+        # 加载配置文件，初始化遥控器
         self.config = config
         self.remote_controller = RemoteController()
         
-        # Initialize the policy network
+        # Initialize the policy network 策略模型加载
         self.policy =  onnxruntime.InferenceSession(config.policy_path)# torch.jit.load(config.policy_path)
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
@@ -110,12 +112,14 @@ class Controller:
         self.cmd = np.array([0.0, 0, 0])
         self.counter = 0
         self.timestep = 0
+        # 参考动作文件
         self.motion = np.load("/home/deepcyber-mk/Documents/unitree_rl_gym/deploy/deploy_real/bydmimic/dance_zui.npz")
         self.motionpos = self.motion['body_pos_w']
         self.motionquat = self.motion['body_quat_w']
         self.motioninputpos = self.motion['joint_pos']
         self.motioninputvel = self.motion['joint_vel']
         self.action_buffer = np.zeros((self.config.num_actions,), dtype=np.float32)
+        # 初始yaw的固定变换矩阵
         self.init_to_world = np.zeros((3,3), dtype=np.float32)
         self.dof_idx = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 
                         12, 13, 14, 
@@ -152,11 +156,13 @@ class Controller:
         self.wait_for_low_state()
 
         # Initialize the command msg
+        # 控制指令初始化清零，控制及关节模式设置
         if config.msg_type == "hg":
-            init_cmd_hg(self.low_cmd, self.mode_machine_, self.mode_pr_)
+            init_cmd_hg(self.low_cmd, self.mode_machine_, self.mode_pr_)  # type: ignore
         elif config.msg_type == "go":
-            init_cmd_go(self.low_cmd, weak_motor=self.config.weak_motor)
+            init_cmd_go(self.low_cmd, weak_motor=self.config.weak_motor)  # type: ignore
 
+    # 底层状态回调函数，主要更新底层信息，同时更新遥控器指令信息
     def LowStateHgHandler(self, msg: LowStateHG):
         self.low_state = msg
         self.mode_machine_ = self.low_state.mode_machine
@@ -171,11 +177,18 @@ class Controller:
         self.lowcmd_publisher_.Write(cmd)
 
     def wait_for_low_state(self):
+        """
+        阻塞等待直到收到第一条有效的机器人状态消息(low_state.tick != 0)。
+        用于确保 DDS 通信已建立、机器人在线，再进入后续控制流程。
+        """
         while self.low_state.tick == 0:
             time.sleep(self.config.control_dt)
         print("Successfully connected to the robot.")
 
     def zero_torque_state(self):
+        """
+        零力矩模式,遥控器按start跳出循环
+        """
         print("Enter zero torque state.")
         print("Waiting for the start signal...")
         while self.remote_controller.button[KeyMap.start] != 1:
@@ -183,6 +196,7 @@ class Controller:
             self.send_cmd(self.low_cmd)
             time.sleep(self.config.control_dt)
 
+    # 2s线性插值到配置文件中的默认位置
     def move_to_default_pos(self):
         print("Moving to default pos.")
         # move time 2s
@@ -216,6 +230,9 @@ class Controller:
             time.sleep(self.config.control_dt)
 
     def default_pos_state(self):
+        """
+        机器人高阻尼保持在默认位置，同时等待遥控器 A 键被按下
+        """
         print("Enter default pos state.")
         print("Waiting for the Button A signal...")
         while self.remote_controller.button[KeyMap.A] != 1:
@@ -237,10 +254,15 @@ class Controller:
             quat = self.low_state.imu_state.quaternion
             print("quat",quat)
             time.sleep(self.config.control_dt)
+
     def yaw_quat(self,q):
+        """
+        把四元数yaw角抽出来,再构成新四元数
+        """
         w, x, y, z = q
         yaw = np.arctan2(2 * (w * z + x * y), 1 - 2 * (y**2 + z**2))
         return np.array([np.cos(yaw / 2), 0, 0, np.sin(yaw / 2)])
+    
     def matrix_to_quaternion_simple(self, matrix):
         """
         简化的矩阵转四元数实现
@@ -278,7 +300,11 @@ class Controller:
             z = 0.25 * s
         
         return np.array([w, x, y, z])
+    
     def run(self):
+        """
+        核心循环推理函数
+        """
         self.counter += 1
         # Get the current joint position and velocity
         for i in range(len(self.dof_idx)):
@@ -289,6 +315,7 @@ class Controller:
         quat = self.low_state.imu_state.quaternion
         ang_vel = np.array([self.low_state.imu_state.gyroscope], dtype=np.float32)
 
+        # IMU 坐标系对齐
         if self.config.imu_type == "torso":
             # h1 and h1_2 imu is on the torso
             # imu data needs to be transformed to the pelvis frame
@@ -296,6 +323,9 @@ class Controller:
             waist_yaw_omega = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].dq
             quat, ang_vel = transform_imu_data(waist_yaw=waist_yaw, waist_yaw_omega=waist_yaw_omega, imu_quat=quat, imu_omega=ang_vel)
         if self.config.imu_type == "pelvis":
+            """
+            输出是torso本体系下world的旋转
+            """
             # pelvis imu data needs to be transformed to the torso frame
             waist_yaw = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].q
             # waist_yaw_omega = self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[0]].dq
@@ -303,6 +333,7 @@ class Controller:
             waist_pitch= self.low_state.motor_state[self.config.arm_waist_joint2motor_idx[2]].q
             quat_torso = transform_pelvis_to_torso_complete(waist_yaw, waist_roll, waist_pitch, quat)
         
+        # 计算初始yaw偏移变换矩阵
         if self.timestep < 2:
             ref_motion_quat = self.motionquat[self.timestep,9,:]
             yaw_motion_quat = self.yaw_quat(ref_motion_quat)
@@ -318,18 +349,22 @@ class Controller:
             self.init_to_world =  yaw_robot_matrix @ yaw_motion_matrix.T
         print("quat_torso",quat_torso)
         print("quat",quat)
+
         qj_obs = self.qj.copy()
         dqj_obs = self.dqj.copy()
+        # 这里要注意，观测里的关节位置是要减默认关节角的
         qj_obs = qj_obs # - self.config.default_angles
+        # 取command
         motioninput = np.concatenate((self.motioninputpos[self.timestep,:],self.motioninputvel[self.timestep,:]), axis=0)
         motionposcurrent = self.motionpos[self.timestep,9,:]
         motionquatcurrent = self.motionquat[self.timestep,9,:]
-
+        # 取anchor_quat_err，先左乘init_to_world对齐初始yaw
+        # 然后左乘quat_torso的逆变换到torso局部系下，再归一化取前两列
         relquat =  quaternion_multiply(self.matrix_to_quaternion_simple(self.init_to_world), motionquatcurrent)
         relquat = quaternion_multiply(quaternion_conjugate(quat_torso),relquat)
         relquat = relquat / np.linalg.norm(relquat)
         relmatrix = quaternion_to_rotation_matrix(relquat)[:,:2].reshape(-1,)
-        
+        # 填观测
         offset = 0
         self.obs[offset:offset+58] = motioninput
         offset += 58
@@ -338,8 +373,9 @@ class Controller:
         self.obs[offset:offset+3] = ang_vel
         offset += 3
         qpos_urdf = qj_obs
+        # 把读到的xml顺序的q_joint按seq顺序重排
         qj_obs_seq =  np.array([qpos_urdf[joint_xml.index(joint)] for joint in joint_seq])
-        self.obs[offset:offset+29] = qj_obs_seq  - self.config.default_angles_seq
+        self.obs[offset:offset+29] = qj_obs_seq  - self.config.default_angles_seq # 减默认关节角写在这里了
         offset += 29
         qvel_urdf = dqj_obs
         dqj_obs_seq =  np.array([qvel_urdf[joint_xml.index(joint)] for joint in joint_seq])
@@ -357,6 +393,7 @@ class Controller:
         # transform action to target_dof_pos
         target_dof_pos = self.config.default_angles_seq + self.action * self.config.action_scale_seq
         target_dof_pos = target_dof_pos.reshape(-1,)
+        # (*)注: 前面的推理部分顺序都是seq，这里才转回xml顺序
         target_dof_pos = np.array([target_dof_pos[joint_seq.index(joint)] for joint in joint_xml])
         self.timestep += 1
         # Build low cmd
@@ -399,6 +436,7 @@ if __name__ == "__main__":
 
     controller = Controller(config)
 
+    #-------先后进入零力矩模式、插值回默认位置、默认位置保持三个阶段--------
     # Enter the zero torque state, press the start key to continue executing
     controller.zero_torque_state()
 
@@ -417,6 +455,7 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             break
     # Enter the damping state
+    # 策略控制结束后自动进阻尼模式
     create_damping_cmd(controller.low_cmd)
     controller.send_cmd(controller.low_cmd)
     print("Exit")
