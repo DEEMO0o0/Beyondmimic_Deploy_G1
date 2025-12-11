@@ -1,8 +1,11 @@
 import sys
-# 这个绝对路径移植时要改
-sys.path.append('/home/deepcyber-mk/Documents/unitree_rl_gym')
-sys.path.append('/home/deepcyber-mk/Documents/unitree_rl_gym/deploy/deploy_real/common')
-from legged_gym import LEGGED_GYM_ROOT_DIR
+import os
+# 获取当前文件所在目录的绝对路径
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# 将当前项目的根目录添加到sys.path
+project_root = os.path.dirname(os.path.dirname(current_dir))
+sys.path.append(current_dir)
+sys.path.append(os.path.join(current_dir, 'common'))
 from typing import Union
 import numpy as np
 import time
@@ -41,7 +44,7 @@ joint_xml = [
     "right_wrist_yaw_joint"]
 
 def quaternion_conjugate(q):
-    """四元数共轭: [w, x, y, z] -> [w, -x, -y, -z]"""
+    """四元数共轭: [w, x, y, z] -> [w, -x, -y, -z], 相当于旋转矩阵转置"""
     return np.array([q[0], -q[1], -q[2], -q[3]])
 
 def quaternion_multiply(q1, q2):
@@ -113,7 +116,7 @@ class Controller:
         self.counter = 0
         self.timestep = 0
         # 参考动作文件
-        self.motion = np.load("/home/deepcyber-mk/Documents/unitree_rl_gym/deploy/deploy_real/bydmimic/dance_zui.npz")
+        self.motion = np.load(os.path.join(current_dir, "bydmimic", "motion.npz"))
         self.motionpos = self.motion['body_pos_w']
         self.motionquat = self.motion['body_quat_w']
         self.motioninputpos = self.motion['joint_pos']
@@ -428,7 +431,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Load config
-    config_path = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/configs/{args.config}"
+    # 配置文件路径
+    config_path = os.path.join(current_dir, "configs", args.config)
     config = Config(config_path)
 
     # Initialize DDS communication

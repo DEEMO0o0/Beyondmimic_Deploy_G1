@@ -309,6 +309,13 @@ if __name__ == "__main__":
     d.qpos[2] = 0.8
     d.qpos[7:] = target_dof_pos
     # target_dof_pos = joint_pos_array_seq
+    # ---------- 顺时针旋转 90° (测试初始yaw不为0的情况)----------
+    import math
+    yaw_plus90 = math.radians(90)                 # +90°
+    half_yaw = yaw_plus90 / 2.0
+    d.qpos[3:7] = [math.cos(half_yaw), 0, 0, -math.sin(half_yaw)]  # [w,x,y,z]
+    # ------------------------------------
+
     # 获取anchor body在mujoco中的body索引
     body_name = "torso_link"  # robot_ref_body_index=3 motion_ref_body_index=7
     # body_name = "pelvis"
@@ -321,6 +328,13 @@ if __name__ == "__main__":
         # Close the viewer automatically after simulation_duration wall-seconds.
         
         start = time.time()
+        # 固定相机：世界系位置 + 看向世界系原点 + 世界系上方向
+        viewer.cam.lookat[:] = [0, 0, 0.8]      # 注视点（躯干高度）
+        viewer.cam.distance = 3.0               # 相机到注视点距离
+        viewer.cam.elevation = -20              # 仰角（度）
+        viewer.cam.azimuth = 90                 # 方位角（度）
+        viewer.cam.fixedcamid = -1              # 必须=-1，表示用自由相机
+        
         while viewer.is_running() and time.time() - start < simulation_duration:
             step_start = time.time()
             # 在前两个控制周期，把参考运动和仿真的yaw对齐

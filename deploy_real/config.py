@@ -1,4 +1,3 @@
-from legged_gym import LEGGED_GYM_ROOT_DIR
 import numpy as np
 import yaml
 
@@ -20,7 +19,7 @@ class Config:
             self.lowcmd_topic = config["lowcmd_topic"]
             self.lowstate_topic = config["lowstate_topic"]
 
-            self.policy_path = config["policy_path"].replace("{LEGGED_GYM_ROOT_DIR}", LEGGED_GYM_ROOT_DIR)
+            self.policy_path = config["policy_path"]
 
             self.leg_joint2motor_idx = config["leg_joint2motor_idx"]
             # self.kps = config["kps"]
