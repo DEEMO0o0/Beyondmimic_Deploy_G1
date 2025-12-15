@@ -9,6 +9,7 @@ class MotorMode:
 
 
 def create_damping_cmd(cmd: Union[LowCmdGo, LowCmdHG]):
+    print("enter soft damping mode!")
     size = len(cmd.motor_cmd)
     for i in range(size):
         cmd.motor_cmd[i].q = 0

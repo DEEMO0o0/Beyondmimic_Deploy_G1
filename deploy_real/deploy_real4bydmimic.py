@@ -115,6 +115,10 @@ class Controller:
         self.cmd = np.array([0.0, 0, 0])
         self.counter = 0
         self.timestep = 0
+
+        # 用于统计策略推理时长的变量
+        self.inference_times = []  # 存储每次推理的时长(ms)
+        self.total_inference_time = 0.0  # 累计总推理时长(ms)
         # 参考动作文件
         self.motion = np.load(os.path.join(current_dir, "bydmimic", "motion.npz"))
         self.motionpos = self.motion['body_pos_w']
@@ -358,6 +362,8 @@ class Controller:
         # 这里要注意，观测里的关节位置是要减默认关节角的
         qj_obs = qj_obs # - self.config.default_angles
         # 取command
+        if self.timestep >= self.motioninputpos.shape[0]:
+            self.timestep = self.motioninputpos.shape[0] - 1 # 停在最后一帧
         motioninput = np.concatenate((self.motioninputpos[self.timestep,:],self.motioninputvel[self.timestep,:]), axis=0)
         motionposcurrent = self.motionpos[self.timestep,9,:]
         motionquatcurrent = self.motionquat[self.timestep,9,:]
@@ -388,7 +394,22 @@ class Controller:
                 
         # Get the action from the policy network
         obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
+
+        # 记录策略推理开始时间
+        start_time = time.time()
+
         action = self.policy.run(['actions'], {'obs': obs_tensor.numpy(),'time_step':np.array([self.timestep], dtype=np.float32).reshape(1,1)})[0]
+
+        # 记录策略推理结束时间并计算时长
+        end_time = time.time()
+        inference_time = (end_time - start_time) * 1000  # 转换为毫秒
+
+        # 记录推理时长到统计变量
+        self.inference_times.append(inference_time)
+        self.total_inference_time += inference_time
+
+        # 输出推理时长信息
+        print(f"Policy inference time: {inference_time:.3f} ms")
         
         action = np.asarray(action).reshape(-1)
         self.action = action.copy()
@@ -420,6 +441,20 @@ class Controller:
         self.send_cmd(self.low_cmd)
 
         time.sleep(self.config.control_dt)
+
+    def print_inference_statistics(self):
+        """
+        输出策略推理时长的统计信息
+        """
+        if not self.inference_times:
+            print("No inference data to display.")
+            return
+
+        average_time = self.total_inference_time / len(self.inference_times)
+        min_time = min(self.inference_times)
+        max_time = max(self.inference_times)
+
+        print(f"\nPolicy inference time - Average: {average_time:.3f} ms, Min: {min_time:.3f} ms, Max: {max_time:.3f} ms")
 
 
 if __name__ == "__main__":
@@ -458,9 +493,18 @@ if __name__ == "__main__":
                 break
         except KeyboardInterrupt:
             break
+
+    # 打印策略推理时长统计信息
+    controller.print_inference_statistics()
+
     # Enter the damping state
-    # 策略控制结束后自动进阻尼模式
-    create_damping_cmd(controller.low_cmd)
-    controller.send_cmd(controller.low_cmd)
+    # 策略控制结束后自动进软阻尼模式并循环执行
+    while True:
+        try:
+            create_damping_cmd(controller.low_cmd)
+            controller.send_cmd(controller.low_cmd)
+            time.sleep(controller.config.control_dt)
+        except KeyboardInterrupt:
+            break
     print("Exit")
 # python  deploy_real4bydmimic.py enp4s0  g1_for_bydmimic.yaml
