@@ -15,16 +15,20 @@ from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitiali
 from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
 from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowCmd_, unitree_hg_msg_dds__LowState_
 from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_, unitree_go_msg_dds__LowState_
+from unitree_sdk2py.idl.default import unitree_go_msg_dds__SportModeState_
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowCmd_ as LowCmdHG
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_ as LowCmdGo
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_ as LowStateHG
 from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_ as LowStateGo
+from unitree_sdk2py.idl.unitree_go.msg.dds_ import SportModeState_ as SportModeState
 from unitree_sdk2py.utils.crc import CRC
 import onnxruntime as ort
+from scipy.spatial.transform import Rotation as R
 from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_hg, init_cmd_go, MotorMode
 from common.rotation_helper import get_gravity_orientation, transform_imu_data, transform_pelvis_to_torso_complete
 from common.remote_controller import RemoteController, KeyMap
 from config import Config
+from common.state_visualize import *
 
 joint_seq =['left_hip_pitch_joint', 'right_hip_pitch_joint', 'waist_yaw_joint', 'left_hip_roll_joint', 
  'right_hip_roll_joint', 'waist_roll_joint', 'left_hip_yaw_joint', 'right_hip_yaw_joint', 
@@ -109,6 +113,7 @@ class Controller:
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
+        self.tau_est = np.zeros(config.num_actions, dtype=np.float32)
         self.action = np.zeros(config.num_actions, dtype=np.float32)
         self.target_dof_pos = config.default_angles.copy()
         self.obs = np.zeros(config.num_obs, dtype=np.float32)
@@ -144,6 +149,10 @@ class Controller:
 
             self.lowstate_subscriber = ChannelSubscriber(config.lowstate_topic, LowStateHG)
             self.lowstate_subscriber.Init(self.LowStateHgHandler, 10)
+            # 新增里程计
+            self.sportmode_state = unitree_go_msg_dds__SportModeState_()
+            self.sportmode_state_subscriber = ChannelSubscriber(config.sportmode_state_topic, SportModeState)
+            self.sportmode_state_subscriber.Init(self.SportModeStateHandler, 10)
 
         elif config.msg_type == "go":
             # h1 uses the go msg type
@@ -178,6 +187,9 @@ class Controller:
     def LowStateGoHandler(self, msg: LowStateGo):
         self.low_state = msg
         self.remote_controller.set(self.low_state.wireless_remote)
+
+    def SportModeStateHandler(self, msg: SportModeState):
+        self.sportmode_state = msg
 
     def send_cmd(self, cmd: Union[LowCmdGo, LowCmdHG]):
         cmd.crc = CRC().Crc(cmd)
@@ -317,6 +329,7 @@ class Controller:
         for i in range(len(self.dof_idx)):
             self.qj[i] = self.low_state.motor_state[self.dof_idx[i]].q
             self.dqj[i] = self.low_state.motor_state[self.dof_idx[i]].dq
+            self.tau_est[i] = self.low_state.motor_state[self.dof_idx[i]].tau_est
 
         # imu_state quaternion: w, x, y, z
         quat = self.low_state.imu_state.quaternion
@@ -356,6 +369,25 @@ class Controller:
             self.init_to_world =  yaw_robot_matrix @ yaw_motion_matrix.T
         print("quat_torso",quat_torso)
         print("quat",quat)
+
+        # 从quat_torso计算躯干的欧拉角 (roll, pitch, yaw)
+        # quat_torso格式是[w,x,y,z]，需要转换为scipy格式[x,y,z,w]
+        quat_torso_scipy = [quat_torso[1], quat_torso[2], quat_torso[3], quat_torso[0]]
+        euler_xyz = R.from_quat(quat_torso_scipy).as_euler('xyz', degrees=False).astype(np.float32)  # 返回shape(3,)的[roll, pitch, yaw]
+
+        # -----------绘图和日志记录开始------------
+        velocity = self.sportmode_state.velocity  # 读取 velocity 数组
+        position = self.sportmode_state.position
+        # visualize and log
+        log_vis.update_real_data(self.qj.copy(),
+                                 self.dqj.copy(),
+                                 ang_vel[0].copy(),
+                                 euler_xyz.copy(),
+                                 self.target_dof_pos.copy(),
+                                 self.tau_est.copy(),
+                                 velocity,
+                                 position)
+        # -----------绘图和日志记录结束------------
 
         qj_obs = self.qj.copy()
         dqj_obs = self.dqj.copy()
@@ -419,6 +451,9 @@ class Controller:
         target_dof_pos = target_dof_pos.reshape(-1,)
         # (*)注: 前面的推理部分顺序都是seq，这里才转回xml顺序
         target_dof_pos = np.array([target_dof_pos[joint_seq.index(joint)] for joint in joint_xml])
+        # 保存目标位置用于可视化
+        self.target_dof_pos = target_dof_pos.copy()
+
         self.timestep += 1
         # Build low cmd
         for i in range(len(self.config.leg_joint2motor_idx)):
@@ -485,6 +520,8 @@ if __name__ == "__main__":
     # Enter the default position state, press the A key to continue executing
     controller.default_pos_state()
 
+    log_vis = RobotStateObserver('G1_whole')
+
     while True:
         try:
             controller.run()
@@ -504,7 +541,10 @@ if __name__ == "__main__":
             create_damping_cmd(controller.low_cmd)
             controller.send_cmd(controller.low_cmd)
             time.sleep(controller.config.control_dt)
+            if controller.remote_controller.button[KeyMap.B] == 1:
+                break
         except KeyboardInterrupt:
             break
     print("Exit")
+    log_vis.plot_save_real_data()
 # python  deploy_real4bydmimic.py enp4s0  g1_for_bydmimic.yaml

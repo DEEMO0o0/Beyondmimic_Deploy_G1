@@ -4,4 +4,4 @@ motion.npz
 .vscode/settings.json
 policy.onnx
 deploy_real/__pycache__/
-deploy_real/common/__pycache__/
+deploy_real/common/__pycache__/.idea/
