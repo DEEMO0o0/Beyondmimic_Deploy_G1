@@ -6,6 +6,7 @@ imu_type: "pelvis"    # "torso" or "pelvis"
 
 lowcmd_topic: "rt/lowcmd"
 lowstate_topic: "rt/lowstate"
+sportmode_state_topic: "rt/odommodestate"
 
 policy_path: "./bydmimic/policy.onnx" # policy_zuiwu_48000
 
