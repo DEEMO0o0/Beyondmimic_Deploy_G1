@@ -129,11 +129,18 @@ class RobotStateObserver:
         action = self.data['action']
         # print(action)
         nested_out = np.array(transpose_list_of_lists(action))
-        plt.figure()
-        plt.suptitle("Target q")
+
+        # 动态计算关节数量和网格布局
+        num_joints = len(nested_out)
+        ncols = min(6, num_joints)  # 最多6列
+        nrows = int(np.ceil(num_joints / ncols))  # 动态计算行数
+
+        # 根据关节数量调整图像大小
+        fig = plt.figure(figsize=(ncols * 4.5, nrows * 3.5))
+        plt.suptitle("Target q", fontsize=18)
 
         for idx, p in enumerate(nested_out):
-            plt.subplot(2, self.j_num, idx + 1)
+            plt.subplot(nrows, ncols, idx + 1)
             plt.plot(p, label=f"Joint {idx + 1}")  # 添加 label
 
             # 添加图例
@@ -142,15 +149,18 @@ class RobotStateObserver:
             # 添加标题和标签
             # 使用 self.joint_names 作为标题（如果存在且索引在范围内）
             if hasattr(self, 'joint_names') and idx < len(self.joint_names):
-                plt.title(self.joint_names[idx])
+                plt.title(self.joint_names[idx], fontsize=8)
             elif idx < self.j_num:
                 title, i = self.gen_joint_title(idx)
-                plt.title(title)
-            plt.xlabel('Time Step')
-            plt.ylabel("Action")
+                plt.title(title, fontsize=8)
+            plt.xlabel('Time Step', fontsize=7)
+            plt.ylabel("Action", fontsize=7)
+            plt.tick_params(labelsize=6)
 
             # 显示网格
             plt.grid(True)
+
+        plt.tight_layout()
 
         if save_name is not None:
             self.save_plot(save_name)
@@ -292,10 +302,18 @@ class RobotStateObserver:
         nested_out = np.array(transpose_list_of_lists(pos))
         # if self.name == 'G1_whole':
         #     nested_out = g1_whole_rearrange_array(nested_out)
-        plt.figure()
-        plt.suptitle("Joint Positions")
+
+        # 动态计算关节数量和网格布局
+        num_joints = len(nested_out)
+        ncols = min(6, num_joints)  # 最多6列
+        nrows = int(np.ceil(num_joints / ncols))  # 动态计算行数
+
+        # 根据关节数量调整图像大小
+        fig = plt.figure(figsize=(ncols * 4.5, nrows * 3.5))
+        plt.suptitle("Joint Positions", fontsize=18)
+
         for idx, p in enumerate(nested_out):
-            plt.subplot(2, self.j_num, idx + 1)
+            plt.subplot(nrows, ncols, idx + 1)
             plt.plot(p, label=f"Joint {idx + 1}")  # 添加 label
 
             # 添加图例
@@ -304,15 +322,18 @@ class RobotStateObserver:
             # 添加标题和标签
             # 使用 self.joint_names 作为标题（如果存在且索引在范围内）
             if hasattr(self, 'joint_names') and idx < len(self.joint_names):
-                plt.title(self.joint_names[idx])
+                plt.title(self.joint_names[idx], fontsize=8)
             elif idx < self.j_num:
                 title, i = self.gen_joint_title(idx)
-                plt.title(title)
-            plt.xlabel('Time Step')
-            plt.ylabel("Position")
+                plt.title(title, fontsize=8)
+            plt.xlabel('Time Step', fontsize=7)
+            plt.ylabel("Position", fontsize=7)
+            plt.tick_params(labelsize=6)
 
             # 显示网格
             plt.grid(True)
+
+        plt.tight_layout()
 
         if save_name is not None:
             self.save_plot(save_name)
@@ -331,10 +352,18 @@ class RobotStateObserver:
         nested_out = np.array(transpose_list_of_lists(vel))
         # if self.name == 'G1_whole':
         #     nested_out = g1_whole_rearrange_array(nested_out)
-        plt.figure()
-        plt.suptitle("Joint Velocities")
+
+        # 动态计算关节数量和网格布局
+        num_joints = len(nested_out)
+        ncols = min(6, num_joints)  # 最多6列
+        nrows = int(np.ceil(num_joints / ncols))  # 动态计算行数
+
+        # 根据关节数量调整图像大小
+        fig = plt.figure(figsize=(ncols * 4.5, nrows * 3.5))
+        plt.suptitle("Joint Velocities", fontsize=18)
+
         for idx, p in enumerate(nested_out):
-            plt.subplot(2, self.j_num, idx + 1)
+            plt.subplot(nrows, ncols, idx + 1)
             plt.plot(p, label=f"Joint {idx + 1}")  # 添加 label
 
             # 添加图例
@@ -343,15 +372,18 @@ class RobotStateObserver:
             # 添加标题和标签
             # 使用 self.joint_names 作为标题（如果存在且索引在范围内）
             if hasattr(self, 'joint_names') and idx < len(self.joint_names):
-                plt.title(self.joint_names[idx])
+                plt.title(self.joint_names[idx], fontsize=8)
             elif idx < self.j_num:
                 title, i = self.gen_joint_title(idx)
-                plt.title(title)
-            plt.xlabel('Time Step')
-            plt.ylabel("Velocities")
+                plt.title(title, fontsize=8)
+            plt.xlabel('Time Step', fontsize=7)
+            plt.ylabel("Velocities", fontsize=7)
+            plt.tick_params(labelsize=6)
 
             # 显示网格
             plt.grid(True)
+
+        plt.tight_layout()
 
         if save_name is not None:
             self.save_plot(save_name)
@@ -373,11 +405,18 @@ class RobotStateObserver:
         nested_out = np.array(transpose_list_of_lists(torque))
         # if self.name == 'G1_whole':
         #     nested_out = g1_whole_rearrange_array(nested_out)
-        plt.figure()
-        plt.suptitle("Joint Torque", fontsize=16)
+
+        # 动态计算关节数量和网格布局
+        num_joints = len(nested_out)
+        ncols = min(6, num_joints)  # 最多6列
+        nrows = int(np.ceil(num_joints / ncols))  # 动态计算行数
+
+        # 根据关节数量调整图像大小
+        fig = plt.figure(figsize=(ncols * 4.5, nrows * 3.5))
+        plt.suptitle("Joint Torque", fontsize=18)
 
         for idx, t in enumerate(nested_out):
-            plt.subplot(2, self.j_num, idx + 1)
+            plt.subplot(nrows, ncols, idx + 1)
             plt.plot(t, label=f"Joint {idx + 1}")  # 绘制曲线并添加 label
 
             # 添加图例
@@ -386,15 +425,18 @@ class RobotStateObserver:
             # 添加标题和标签
             # 使用 self.joint_names 作为标题（如果存在且索引在范围内）
             if hasattr(self, 'joint_names') and idx < len(self.joint_names):
-                plt.title(self.joint_names[idx])
+                plt.title(self.joint_names[idx], fontsize=8)
             elif idx < self.j_num:
                 title, i = self.gen_joint_title(idx)
-                plt.title(title)
-            plt.xlabel('Time Step')
-            plt.ylabel("Torque")
+                plt.title(title, fontsize=8)
+            plt.xlabel('Time Step', fontsize=7)
+            plt.ylabel("Torque", fontsize=7)
+            plt.tick_params(labelsize=6)
 
             # 显示网格
             plt.grid(True)
+
+        plt.tight_layout()
 
         if save_name is not None:
             self.save_plot(save_name)
