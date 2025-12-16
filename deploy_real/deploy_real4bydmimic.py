@@ -125,7 +125,7 @@ class Controller:
         self.inference_times = []  # 存储每次推理的时长(ms)
         self.total_inference_time = 0.0  # 累计总推理时长(ms)
         # 参考动作文件
-        self.motion = np.load(os.path.join(current_dir, "bydmimic", "motion.npz"))
+        self.motion = np.load(os.path.join(current_dir, "bydmimic", "walk_6m_straight", "motion.npz"))
         self.motionpos = self.motion['body_pos_w']
         self.motionquat = self.motion['body_quat_w']
         self.motioninputpos = self.motion['joint_pos']

@@ -45,3 +45,5 @@ class Config:
             self.action_scale_seq = np.array(config["action_scale_seq"], dtype=np.float32)
             self.num_actions = config["num_actions"]
             self.num_obs = config["num_obs"]
+
+            self.sportmode_state_topic = config["sportmode_state_topic"]

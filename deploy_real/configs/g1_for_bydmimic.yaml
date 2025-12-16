@@ -8,7 +8,7 @@ lowcmd_topic: "rt/lowcmd"
 lowstate_topic: "rt/lowstate"
 sportmode_state_topic: "rt/odommodestate"
 
-policy_path: "./bydmimic/policy.onnx" # policy_zuiwu_48000
+policy_path: "./bydmimic/walk_6m_straight/policy.onnx" # policy_zuiwu_48000
 
 leg_joint2motor_idx: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
 # kps: [100, 100, 100, 150, 10, 10, 100, 100, 100, 150, 10, 10]
@@ -68,3 +68,5 @@ action_scale_seq : [0.5475464463233948, 0.5475464463233948, 0.5475464463233948, 
                   0.4385773241519928, 0.4385773241519928, 0.4385773241519928, 0.4385773241519928, 0.4385773241519928, 
                   0.4385773241519928, 0.4385773241519928, 0.4385773241519928, 0.07450087368488312, 0.07450087368488312, 
                   0.07450087368488312, 0.07450087368488312]
+
+sportmode_state_topic: "rt/odommodestate"
