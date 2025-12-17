@@ -3,5 +3,5 @@ motion.npz
 .vscode/launch.json
 .vscode/settings.json
 policy.onnx
-deploy_real/__pycache__/
-deploy_real/common/__pycache__/.idea/
+deploy_real/sim2real_pic/ 
+**/__pycache__/
