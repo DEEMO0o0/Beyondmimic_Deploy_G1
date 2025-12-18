@@ -12,7 +12,7 @@ import onnxruntime
 import numpy as np
 import mujoco
 
-xml_path = "./unitree_description/mjcf/g1_liao.xml"
+xml_path = "../unitree_description/mjcf/g1_liao.xml"
 # xml_path:  "/home/ym/Whole_body_tracking/unitree_description/g1_xml.xml"
 
 # Total simulation time
@@ -241,7 +241,7 @@ if __name__ == "__main__":
     # config_file = "/home/ym/Whole_body_tracking/configs/g1.yaml"
 
     # 测试时motion_file和policy_path两个文件路径都要改
-    motion_file = "./motion.npz"
+    motion_file = "./bydmimic/motion.npz"
     motion =  np.load(motion_file)
     motionpos = motion["body_pos_w"]
     motionquat = motion["body_quat_w"]
@@ -249,7 +249,7 @@ if __name__ == "__main__":
     motioninputvel = motion["joint_vel"]
     i = 0
 
-    policy_path ="./policy.onnx"
+    policy_path ="./bydmimic/policy.onnx"
 
     num_actions = 29
     # 观测向量 154 维 = 参考动作 58 + 躯干相对姿态 6 + 根角速度 3 + 关节位置(减去默认) 29 + 关节转速 29 + 上一动作 29
