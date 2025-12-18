@@ -311,7 +311,7 @@ if __name__ == "__main__":
     # target_dof_pos = joint_pos_array_seq
     # ---------- 顺时针旋转 90° (测试初始yaw不为0的情况)----------
     import math
-    yaw_plus90 = math.radians(90)                 # +90°
+    yaw_plus90 = math.radians(0)                 # +90°
     half_yaw = yaw_plus90 / 2.0
     d.qpos[3:7] = [math.cos(half_yaw), 0, 0, -math.sin(half_yaw)]  # [w,x,y,z]
     # ------------------------------------
